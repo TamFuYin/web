@@ -9,7 +9,7 @@ export default function HomePage() {
 
   const go = () => {
     if (!id.trim()) return alert('请输入剪贴板ID')
-    router.push(`/clipboard/${id}`)
+    router.push(`/${id}`)
   }
 
   return (
