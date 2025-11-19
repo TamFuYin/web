@@ -316,13 +316,38 @@ export default function MinecraftGame() {
             }
             return false;
         };
-
         const updatePlayer = (delta: number) => {
-            // --- 1. UPDATE VELOCITY BASED ON INPUT AND GRAVITY ---
+            // ----------------------------------------------------
+            // 1. 重力 (Y-Axis)
+            // ----------------------------------------------------
             velocity.y -= GRAVITY * delta;
         
             if (controls.isLocked) {
-                const speed = onGround ? SPEED : SPEED * 0.9; // Air control
+                
+                // --- 水平速度衰减（摩擦/阻力） ---
+                const horizontalVelocity = new THREE.Vector3(velocity.x, 0, velocity.z);
+                const horizontalSpeed = horizontalVelocity.length();
+                
+                // 摩擦/阻力系数：在地面上摩擦力强，在空中阻力弱
+                const frictionFactor = onGround ? 8.0 : 0.5; 
+                
+                if (horizontalSpeed > 0) {
+                    // 计算摩擦力向量，与当前速度方向相反
+                    const friction = horizontalVelocity.normalize().multiplyScalar(horizontalSpeed * frictionFactor * delta);
+                    
+                    // 确保摩擦力不会反转速度方向（即不会过快刹车）
+                    if (friction.length() > horizontalSpeed) {
+                        velocity.x = 0;
+                        velocity.z = 0;
+                    } else {
+                        velocity.x -= friction.x;
+                        velocity.z -= friction.z;
+                    }
+                }
+        
+                // --- 水平输入加速度（X/Z-Axis） ---
+                const moveSpeed = onGround ? SPEED * 10 : SPEED * 5; // 提高加速度，对抗摩擦力
+                
                 const cameraDirection = new THREE.Vector3();
                 camera.getWorldDirection(cameraDirection);
                 cameraDirection.y = 0;
@@ -332,31 +357,49 @@ export default function MinecraftGame() {
                 
                 const moveX = Number(moveState.right) - Number(moveState.left);
                 const moveZ = Number(moveState.forward) - Number(moveState.backward);
-
-                const walkDirection = new THREE.Vector3()
-                    .addScaledVector(cameraDirection, moveZ)
-                    .addScaledVector(right, -moveX) // Corrected A/D direction
-                    .normalize();
+        
+                const walkDirection = new THREE.Vector3();
                 
-                if (moveX !== 0 || moveZ !== 0) {
-                    velocity.x = walkDirection.x * speed;
-                    velocity.z = walkDirection.z * speed;
-                } else {
-                    velocity.x -= velocity.x * 10.0 * delta; // Ground friction
-                    velocity.z -= velocity.z * 10.0 * delta;
+                // 累加 Z 方向的速度
+                if (moveZ !== 0) {
+                    walkDirection.addScaledVector(cameraDirection, moveZ);
+                }
+                
+                // 累加 X 方向的速度 (已修复A/D方向)
+                if (moveX !== 0) {
+                    walkDirection.addScaledVector(right, moveX); 
+                }
+        
+                if (walkDirection.lengthSq() > 0) {
+                    walkDirection.normalize();
+                    velocity.x += walkDirection.x * moveSpeed * delta;
+                    velocity.z += walkDirection.z * moveSpeed * delta;
+                }
+        
+                // --- 水平速度限制 ---
+                const maxSpeed = SPEED;
+                const currentSpeedSq = velocity.x * velocity.x + velocity.z * velocity.z;
+                if (currentSpeedSq > maxSpeed * maxSpeed) {
+                    const currentSpeed = Math.sqrt(currentSpeedSq);
+                    velocity.x = (velocity.x / currentSpeed) * maxSpeed;
+                    velocity.z = (velocity.z / currentSpeed) * maxSpeed;
                 }
             }
         
-            // --- 2. APPLY MOVEMENT AND COLLIDE ON EACH AXIS SEPARATELY ---
+            // ----------------------------------------------------
+            // 2. 应用移动和碰撞检测（分离轴）
+            // ----------------------------------------------------
             const moveStep = velocity.clone().multiplyScalar(delta);
             const playerPosition = camera.position;
-
-            // Y-AXIS
+            
+            // Y-AXIS (保持不变，已在上次修复中调整)
             playerBox.copy(getPlayerBox(playerPosition)).translate(new THREE.Vector3(0, moveStep.y, 0));
             if (checkCollision(playerBox)) {
                 if (velocity.y < 0) {
                     onGround = true;
                     playerPosition.y = Math.floor(playerBox.min.y) + PLAYER_HEIGHT;
+                } else if (velocity.y > 0) {
+                    playerPosition.y = Math.ceil(playerBox.max.y) + 0.001; 
                 }
                 velocity.y = 0;
             } else {
@@ -364,7 +407,7 @@ export default function MinecraftGame() {
                 onGround = false;
             }
         
-            // X-AXIS
+            // X-AXIS (保持不变)
             playerBox.copy(getPlayerBox(playerPosition)).translate(new THREE.Vector3(moveStep.x, 0, 0));
             if (checkCollision(playerBox)) {
                 velocity.x = 0;
@@ -372,7 +415,7 @@ export default function MinecraftGame() {
                 playerPosition.x += moveStep.x;
             }
         
-            // Z-AXIS
+            // Z-AXIS (保持不变)
             playerBox.copy(getPlayerBox(playerPosition)).translate(new THREE.Vector3(0, 0, moveStep.z));
             if (checkCollision(playerBox)) {
                 velocity.z = 0;
