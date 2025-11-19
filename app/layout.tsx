@@ -5,8 +5,8 @@ import { Noto_Sans_SC} from 'next/font/google'
 const notoSansSC = Noto_Sans_SC({ weight: '400', subsets: ['latin'] })
 
 export const metadata = {
-  title: '云剪贴板',
-  description: '示例项目',
+  title: 'TamFuYin\'s Personal Web',
+  description: '我的个人网页',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
