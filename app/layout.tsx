@@ -1,9 +1,6 @@
 import './globals.css'
 import Time from './components/Time'
-import { Noto_Sans_SC } from 'next/font/google'
 import Analytics from './components/Analytics';
-
-const notoSansSC = Noto_Sans_SC({ weight: '400', subsets: ['latin'] })
 
 export const metadata = {
   title: 'TamFuYin\'s Web',
@@ -16,7 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <Analytics />
       </head>
-      <body className={notoSansSC.className}>
+      <body>
         <header style={{ padding: '1rem', backgroundColor: '#f0f0f0' }}>
           当前时间: <Time />
         </header>

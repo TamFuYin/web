@@ -10,35 +10,40 @@ class SimpleNoise {
     }
 }
 
+const MAX_INSTANCES = 50000;
+
 export class WorldManager {
     private scene: THREE.Scene;
-    private world = new Map<string, { mesh: THREE.Mesh, type: BlockType }>();
-    private objects: THREE.Object3D[] = [];
-    private materials = new Map<string, THREE.Material | THREE.Material[]>();
+    // Map coordinate "x,y,z" to { type, instanceId }
+    private blockMap = new Map<string, { type: BlockType, instanceId: number }>();
+
+    private meshes = new Map<BlockType, THREE.InstancedMesh>();
+    private counts = new Map<BlockType, number>();
+
     private geometry = new THREE.BoxGeometry(1, 1, 1);
     private noise = new SimpleNoise();
+    private textureLoader = new THREE.TextureLoader();
+    private dummy = new THREE.Object3D();
 
     constructor(scene: THREE.Scene) {
         this.scene = scene;
-        this.loadTextures();
+        this.initMeshes();
         this.generateTerrain();
     }
 
-    private textureLoader = new THREE.TextureLoader();
-
-    private loadTextures() {
+    private initMeshes() {
         Object.values(BLOCKS).forEach(block => {
+            let material: THREE.Material | THREE.Material[];
+
             if (block.texture && block.texture.length === 6) {
-                const mats = block.texture.map(t => {
+                material = block.texture.map(t => {
                     const tex = this.textureLoader.load(t);
                     tex.magFilter = THREE.NearestFilter;
                     tex.minFilter = THREE.NearestFilter;
                     tex.colorSpace = THREE.SRGBColorSpace;
                     return new THREE.MeshLambertMaterial({ map: tex });
                 });
-                this.materials.set(block.type, mats);
             } else {
-                // Fallback for single texture definitions if any (though we standardized to 6)
                 const texPath = block.texture ? block.texture[0] : '';
                 const tex = this.textureLoader.load(texPath);
                 tex.magFilter = THREE.NearestFilter;
@@ -46,13 +51,23 @@ export class WorldManager {
                 tex.colorSpace = THREE.SRGBColorSpace;
 
                 const isGlass = block.type === 'glass';
-                this.materials.set(block.type, new THREE.MeshLambertMaterial({
+                material = new THREE.MeshLambertMaterial({
                     map: tex,
                     transparent: isGlass,
                     opacity: isGlass ? 0.5 : 1,
                     side: isGlass ? THREE.DoubleSide : THREE.FrontSide
-                }));
+                });
             }
+
+            const mesh = new THREE.InstancedMesh(this.geometry, material, MAX_INSTANCES);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.count = 0; // Start with 0 visible
+            mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+            this.scene.add(mesh);
+            this.meshes.set(block.type, mesh);
+            this.counts.set(block.type, 0);
         });
     }
 
@@ -61,38 +76,70 @@ export class WorldManager {
     }
 
     public getBlock(x: number, y: number, z: number) {
-        return this.world.get(this.getBlockKey(x, y, z));
+        return this.blockMap.get(this.getBlockKey(x, y, z));
     }
 
     public addBlock(x: number, y: number, z: number, type: BlockType) {
         x = Math.floor(x); y = Math.floor(y); z = Math.floor(z);
         const key = this.getBlockKey(x, y, z);
-        if (this.world.has(key)) return;
+        if (this.blockMap.has(key)) return;
 
-        const mat = this.materials.get(type);
-        if (!mat) return;
+        const mesh = this.meshes.get(type);
+        const count = this.counts.get(type) || 0;
 
-        const mesh = new THREE.Mesh(this.geometry, mat);
-        mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        this.scene.add(mesh);
-        this.world.set(key, { mesh, type });
-        this.objects.push(mesh);
+        if (!mesh || count >= MAX_INSTANCES) {
+            console.warn(`Max instances reached for ${type}`);
+            return;
+        }
+
+        this.dummy.position.set(x + 0.5, y + 0.5, z + 0.5);
+        this.dummy.updateMatrix();
+        mesh.setMatrixAt(count, this.dummy.matrix);
+        mesh.count = count + 1;
+        mesh.instanceMatrix.needsUpdate = true;
+
+        this.blockMap.set(key, { type, instanceId: count });
+        this.counts.set(type, count + 1);
     }
 
     public removeBlock(x: number, y: number, z: number) {
         x = Math.floor(x); y = Math.floor(y); z = Math.floor(z);
         const key = this.getBlockKey(x, y, z);
-        const block = this.world.get(key);
+        const block = this.blockMap.get(key);
         if (!block) return;
 
-        this.scene.remove(block.mesh);
-        // Note: We don't dispose materials here as they are shared
-        // block.mesh.geometry.dispose(); // Geometry is shared too
-        this.world.delete(key);
-        const idx = this.objects.indexOf(block.mesh);
-        if (idx > -1) this.objects.splice(idx, 1);
+        const mesh = this.meshes.get(block.type);
+        const count = this.counts.get(block.type) || 0;
+
+        if (!mesh || count === 0) return;
+
+        // Swap with last instance to fill gap
+        const lastInstanceId = count - 1;
+
+        // If the removed block is not the last one, we need to move the last one to this slot
+        if (block.instanceId !== lastInstanceId) {
+            const lastMatrix = new THREE.Matrix4();
+            mesh.getMatrixAt(lastInstanceId, lastMatrix);
+            mesh.setMatrixAt(block.instanceId, lastMatrix);
+
+            // Find the block that was at the last position and update its ID
+            // This is slow (O(N)), but for a simple clone it's acceptable. 
+            // To optimize, we could store a reverse map: Map<instanceId, key> per block type.
+            // Let's do the reverse search for now.
+            for (const [k, v] of this.blockMap.entries()) {
+                if (v.type === block.type && v.instanceId === lastInstanceId) {
+                    v.instanceId = block.instanceId;
+                    this.blockMap.set(k, v);
+                    break;
+                }
+            }
+        }
+
+        mesh.count = count - 1;
+        mesh.instanceMatrix.needsUpdate = true;
+
+        this.counts.set(block.type, count - 1);
+        this.blockMap.delete(key);
     }
 
     public generateTerrain() {
@@ -144,27 +191,19 @@ export class WorldManager {
     }
 
     public getObjects() {
-        return this.objects;
+        // Raycaster needs meshes to intersect against
+        // InstancedMesh is a Mesh, so we can return the array of meshes
+        return Array.from(this.meshes.values());
     }
 
     public dispose() {
-        this.world.forEach(block => {
-            this.scene.remove(block.mesh);
+        this.meshes.forEach(mesh => {
+            this.scene.remove(mesh);
+            mesh.dispose();
         });
-        this.world.clear();
-        this.objects = [];
-        this.materials.forEach(mat => {
-            if (Array.isArray(mat)) {
-                mat.forEach(m => {
-                    if ((m as any).map) (m as any).map.dispose();
-                    m.dispose();
-                });
-            } else {
-                if ((mat as any).map) (mat as any).map.dispose();
-                mat.dispose();
-            }
-        });
-        this.materials.clear();
+        this.meshes.clear();
+        this.blockMap.clear();
+        this.counts.clear();
         this.geometry.dispose();
     }
 }
