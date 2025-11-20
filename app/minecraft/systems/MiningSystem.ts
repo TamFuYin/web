@@ -14,7 +14,7 @@ interface MiningSystemOptions {
 }
 
 const BASE_BREAK_TIME = 0.8; // seconds, multiplied by block hardness / tool efficiency
-const NOISE_TEXTURE_SIZE = 64;
+const NOISE_TEXTURE_SIZE = 32;
 
 export class MiningSystem {
     private overlayMesh: THREE.Mesh | null = null;
@@ -69,8 +69,14 @@ export class MiningSystem {
         if (!blockDef) return false;
 
         const selectedStack = this.options.getSelectedStack();
-        const efficiency = selectedStack && this.isTool(selectedStack.item)
-            ? TOOLS[selectedStack.item].efficiency
+        const hasTool = selectedStack && this.isTool(selectedStack.item);
+
+        if (block.type === 'stone' && !hasTool) {
+            return false;
+        }
+
+        const efficiency = hasTool
+            ? TOOLS[selectedStack!.item as ToolType].efficiency
             : 1;
         this.requiredTime = Math.max(0.15, BASE_BREAK_TIME * blockDef.hardness / efficiency);
 

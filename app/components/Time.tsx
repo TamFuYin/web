@@ -8,16 +8,8 @@ export default function Time() {
   const [time, setTime] = useState('')
 
   useEffect(() => {
-    async function update() {
-      try {
-        const res = await fetch('/api/time')
-        if (!res.ok) throw new Error('请求失败')
-        const data = await res.json()
-        setTime(data.time)
-      } catch (e) {
-        console.error(e)
-        setTime('获取时间失败')
-      }
+    const update = () => {
+      setTime(new Date().toLocaleString('zh-CN'))
     }
 
     update()

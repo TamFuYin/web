@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { WorldManager } from './systems/WorldManager';
 import { InputManager } from './systems/InputManager';
 import { PhysicsEngine } from './systems/PhysicsEngine';
-import { BLOCKS, PLAYER_HEIGHT, TOOLS } from './constants';
+import { BLOCKS, PLAYER_HEIGHT, TOOLS, EYE_HEIGHT } from './constants';
 import { InventoryManager, HOTBAR_SIZE } from './systems/InventoryManager';
 import { CommandLogEntry, CommandSystem } from './systems/CommandSystem';
 import { MiningSystem } from './systems/MiningSystem';
@@ -123,10 +123,20 @@ export default function MinecraftGame() {
 
         // Find safe spawn
         const findSafeSpawnY = (x: number, z: number) => {
-            let y = 30;
-            while (y > 0) {
+            const clearanceBlocks = Math.ceil(PLAYER_HEIGHT);
+            let y = 40;
+            while (y > -10) {
                 if (world.getBlock(x, y, z)) {
-                    return y + PLAYER_HEIGHT;
+                    let hasHeadroom = true;
+                    for (let offset = 1; offset <= clearanceBlocks; offset++) {
+                        if (world.getBlock(x, y + offset, z)) {
+                            hasHeadroom = false;
+                            break;
+                        }
+                    }
+                    if (hasHeadroom) {
+                        return y + 1 + EYE_HEIGHT;
+                    }
                 }
                 y--;
             }
@@ -329,6 +339,13 @@ export default function MinecraftGame() {
                             {log.message}
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* Console hint */}
+            {!isConsoleOpen && (
+                <div className="absolute left-4 bottom-20 bg-black/50 text-white text-xs font-mono px-3 py-1 rounded z-30">
+                    按 <span className="font-bold">T</span> 或 <span className="font-bold">/</span> 打开命令行
                 </div>
             )}
 

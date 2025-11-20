@@ -158,8 +158,8 @@ export class WorldManager {
         for (let x = -32; x < 32; x++) {
             for (let z = -32; z < 32; z++) {
                 const h = Math.floor(this.noise.noise2D(x, z) * 4) + 4;
-                // 5% chance to spawn a tree on grass
-                if (Math.random() < 0.05 && this.getBlock(x, h, z)?.type === 'grass') {
+                // Lower probability to keep forests sparser
+                if (Math.random() < 0.02 && this.getBlock(x, h, z)?.type === 'grass') {
                     this.generateTree(x, h + 1, z);
                 }
             }

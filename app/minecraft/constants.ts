@@ -1,7 +1,7 @@
 import { BlockDef, BlockType, ToolDef, ToolType } from './types';
 
 export const GRAVITY = 30.0;
-export const JUMP_FORCE = 10.0;
+export const JUMP_FORCE = 8.0;
 export const SPEED = 5.0;
 export const PLAYER_HEIGHT = 1.8;
 export const PLAYER_WIDTH = 0.4;

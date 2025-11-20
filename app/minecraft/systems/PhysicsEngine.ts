@@ -3,6 +3,8 @@ import { WorldManager } from './WorldManager';
 import { InputManager } from './InputManager';
 import { GRAVITY, JUMP_FORCE, SPEED, PLAYER_HEIGHT, PLAYER_WIDTH, EYE_HEIGHT } from '../constants';
 
+const AIRBORNE_PADDING = 0.02;
+
 export class PhysicsEngine {
     private velocity = new THREE.Vector3();
     private onGround = false;
@@ -99,6 +101,7 @@ export class PhysicsEngine {
         // 2. Movement & Collision (Sub-stepping)
         const subSteps = 5;
         const subDelta = delta / subSteps;
+        let groundedThisFrame = false;
 
         for (let i = 0; i < subSteps; i++) {
             const moveStep = this.velocity.clone().multiplyScalar(subDelta);
@@ -108,7 +111,7 @@ export class PhysicsEngine {
             this.playerBox.copy(this.getPlayerBox(playerPosition)).translate(new THREE.Vector3(0, moveStep.y, 0));
             if (this.checkCollision(this.playerBox, world)) {
                 if (this.velocity.y < 0) {
-                    this.onGround = true;
+                    groundedThisFrame = true;
                     const blockTop = Math.floor(this.playerBox.min.y) + 1;
                     playerPosition.y = blockTop + EYE_HEIGHT;
                 } else if (this.velocity.y > 0) {
@@ -118,24 +121,28 @@ export class PhysicsEngine {
                 this.velocity.y = 0;
             } else {
                 playerPosition.y += moveStep.y;
-                this.onGround = false;
             }
 
             // X-AXIS
+            const currentlyGrounded = groundedThisFrame || this.onGround;
             this.playerBox.copy(this.getPlayerBox(playerPosition)).translate(new THREE.Vector3(moveStep.x, 0, 0));
-            // Auto-jump fix: Lift box slightly to ignore ground
-            this.playerBox.min.y += 0.1;
+            if (currentlyGrounded) {
+                this.playerBox.min.y += 0.1;
+            } else {
+                this.playerBox.min.addScalar(-AIRBORNE_PADDING);
+                this.playerBox.max.addScalar(AIRBORNE_PADDING);
+            }
             if (this.checkCollision(this.playerBox, world)) {
                 // Auto-Jump Logic
-                if (this.onGround) {
-                    // Check if we can step up
-                    // We need to check if the space at y+1 is free (for the feet) AND y+2 is free (for the head)
-                    // Actually, we just need to check if the player box shifted up by 1.1 collides.
+                if (groundedThisFrame) {
                     const climbBox = this.playerBox.clone().translate(new THREE.Vector3(0, 1.1, 0));
                     climbBox.min.y -= 0.1; // Restore original height for the check
 
                     if (!this.checkCollision(climbBox, world)) {
                         this.velocity.y = JUMP_FORCE;
+                        groundedThisFrame = false;
+                        this.onGround = false;
+                        playerPosition.y += 0.01;
                     }
                 }
                 this.velocity.x = 0;
@@ -144,17 +151,25 @@ export class PhysicsEngine {
             }
 
             // Z-AXIS
+            const groundedForZ = groundedThisFrame || this.onGround;
             this.playerBox.copy(this.getPlayerBox(playerPosition)).translate(new THREE.Vector3(0, 0, moveStep.z));
-            // Auto-jump fix: Lift box slightly to ignore ground
-            this.playerBox.min.y += 0.1;
+            if (groundedForZ) {
+                this.playerBox.min.y += 0.1;
+            } else {
+                this.playerBox.min.addScalar(-AIRBORNE_PADDING);
+                this.playerBox.max.addScalar(AIRBORNE_PADDING);
+            }
             if (this.checkCollision(this.playerBox, world)) {
                 // Auto-Jump Logic
-                if (this.onGround) {
+                if (groundedThisFrame) {
                     const climbBox = this.playerBox.clone().translate(new THREE.Vector3(0, 1.1, 0));
                     climbBox.min.y -= 0.1; // Restore original height for the check
 
                     if (!this.checkCollision(climbBox, world)) {
                         this.velocity.y = JUMP_FORCE;
+                        groundedThisFrame = false;
+                        this.onGround = false;
+                        playerPosition.y += 0.01;
                     }
                 }
                 this.velocity.z = 0;
@@ -162,5 +177,7 @@ export class PhysicsEngine {
                 playerPosition.z += moveStep.z;
             }
         }
+
+        this.onGround = groundedThisFrame;
     }
 }
